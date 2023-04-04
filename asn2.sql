@@ -1114,3 +1114,25 @@ SELECT * FROM DimSuppliers
 GO
 */
 -- Requirement7
+
+
+/* execute procedures*/
+/*
+EXEC Customers_Extract;
+EXEC Customers_Transform '2013-01-01';
+EXEC Customer_Load;
+EXEC Locations_Transform;
+EXEC Location_Load;
+EXEC Orders_Extract '2013-01-01';
+EXEC Orders_Transform;
+EXEC Orders_Load;
+EXEC Salesperson_Extract;
+EXEC Salesperson_Transform;
+EXEC Salesperson_Load;
+EXEC Products_Extract;
+EXEC Products_Transform '2013-01-01';
+EXEC Products_Load;
+EXEC Supplier_Extract;
+EXEC Supplier_Transform '2013-01-01';
+EXEC Supplier_Load;
+*/
