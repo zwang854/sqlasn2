@@ -1118,6 +1118,7 @@ GO
 
 /* execute procedures*/
 /*
+EXEC DimDate_Load;
 EXEC Customers_Extract;
 EXEC Customers_Transform '2013-01-01';
 EXEC Customer_Load;
