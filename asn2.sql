@@ -610,6 +610,7 @@ CREATE TABLE dbo.Salesperson_Preload (
 	EmailAddress NVARCHAR(256)
     CONSTRAINT PK_Salesperson_Preload PRIMARY KEY CLUSTERED ( SalespersonKey )
 );
+GO
 
 CREATE PROCEDURE dbo.Salesperson_Transform    -- Type 1 SCD
 AS
@@ -746,6 +747,8 @@ BEGIN
 
 	COMMIT TRANSACTION;
 END;
+
+GO
 
 CREATE PROCEDURE dbo.Salesperson_Load
 AS
