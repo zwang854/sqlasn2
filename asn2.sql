@@ -309,6 +309,93 @@ BEGIN;
     END;
 END; --END OF PROCEDURE Customers_Extract
 GO
+
+CREATE PROCEDURE dbo.Orders_Extract
+	@OrderDate DATE
+AS
+BEGIN;
+	SET NOCOUNT ON;
+	SET XACT_ABORT ON;
+	DECLARE @RowCt INT;
+	
+	TRUNCATE TABLE dbo.Orders_Stage;
+	
+	WITH CityDetails AS (
+        SELECT ci.CityID,
+               ci.CityName,
+               sp.StateProvinceCode,
+               sp.StateProvinceName,
+               co.CountryName,
+               co.FormalName
+        FROM WideWorldImporters.Application.Cities ci
+        LEFT JOIN WideWorldImporters.Application.StateProvinces sp
+            ON ci.StateProvinceID = sp.StateProvinceID
+        LEFT JOIN WideWorldImporters.Application.Countries co
+            ON sp.CountryID = co.CountryID ),
+	CustomerDetails AS (
+		SELECT
+			cust.CustomerID,
+			cust.CustomerName,
+			cd.CityName,
+			cd.StateProvinceName,
+			cd.CountryName
+		FROM WideWorldImporters.Sales.Customers cust
+		LEFT JOIN CityDetails cd
+			ON DeliveryCityID = cd.CityID),
+	StockItemDetails AS(
+		SELECT
+			ol.OrderLineID,
+			ol.OrderID,
+			si.StockItemName,
+			sup.SupplierName
+		FROM WideWorldImporters.Sales.OrderLines ol
+		INNER JOIN WideWorldImporters.Warehouse.StockItems si
+			ON si.StockItemID = ol.StockItemID
+		INNER JOIN WideWorldImporters.Purchasing.Suppliers sup
+			ON sup.SupplierID = si.SupplierID)
+	INSERT INTO dbo.Orders_Stage(
+		OrderDate,
+		Quantity,
+		UnitPrice,
+		TaxRate,
+		CustomerName,
+		CityName,
+		StateProvinceName,
+		CountryName,
+		StockItemName,
+		SupplierName,
+		LogonName
+	)
+	SELECT
+		o.OrderDate,
+		ol.Quantity,
+		ol.UnitPrice,
+		ol.TaxRate,
+		cud.CustomerName,
+		cud.CityName,
+		cud.StateProvinceName,
+		cud.CountryName,
+		sid.StockItemName,
+		sid.SupplierName,
+		p.LogonName
+	FROM WideWorldImporters.Sales.Orders o
+	INNER JOIN WideWorldImporters.Sales.OrderLines ol
+		ON o.OrderID = ol.OrderID
+	LEFT JOIN CustomerDetails cud
+		ON o.CustomerID = cud.CustomerID
+	LEFT JOIN StockItemDetails sid
+		ON o.OrderID = sid.OrderID
+	INNER JOIN WideWorldImporters.Application.People p
+		ON p.PersonID = o.SalespersonPersonID
+	WHERE o.OrderDate = @OrderDate;
+	
+	SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END; --END OF PROCEDURE Orders_Extract
+GO
 ------------------------------
 CREATE OR ALTER PROCEDURE dbo.Products_Extract
 AS
@@ -837,6 +924,58 @@ SELECT ci.LocationKey,
 	AND cu.DeliveryStateProvinceName=ci.StateProvName 
 	AND cu.DeliveryCountryName=ci.CountryName; 
 	COMMIT TRANSACTION; 
+END;
+GO
+
+--Order preload table and procedure
+CREATE TABLE dbo.Orders_Preload (
+	CustomerKey INT NOT NULL,
+	LocationKey INT NOT NULL,
+	ProductKey INT NOT NULL,
+	SalespersonKey INT NOT NULL,
+	SupplierKey	INT NOT NULL,
+	DateKey INT NOT NULL,
+	Quantity INT NOT NULL,
+	UnitPrice DECIMAL(18, 2) NOT NULL,
+	TaxRate DECIMAL(18, 3) NOT NULL,
+	TotalBeforeTax DECIMAL(18, 2) NOT NULL,
+	TotalAfterTax DECIMAL(18, 2) NOT NULL,
+);
+
+GO
+CREATE PROCEDURE dbo.Orders_Transform
+AS 
+BEGIN; 
+	SET NOCOUNT ON; 
+	SET XACT_ABORT ON; 
+	TRUNCATE TABLE dbo.Orders_Preload; 
+
+	INSERT INTO dbo.Orders_Preload/* Columns excluded for brevity */ 
+	SELECT cu.CustomerKey, 
+			ci.LocationKey, 
+			pr.ProductKey, 
+			sp.SalespersonKey, 
+			su.SupplierKey,
+			CAST(YEAR(ord.OrderDate)*10000 +MONTH(ord.OrderDate)*100 +DAY(ord.OrderDate) AS INT), 
+			SUM(ord.Quantity) AS Quantity, 
+			AVG(ord.UnitPrice) AS UnitPrice, 
+			AVG(ord.TaxRate) AS TaxRate, 
+			SUM(ord.Quantity*ord.UnitPrice) AS TotalBeforeTax, 
+			SUM(ord.Quantity*ord.UnitPrice*(1 +ord.TaxRate/100)) AS TotalAfterTax 
+	FROM dbo.Orders_Stage ord 
+	JOIN dbo.Customers_Preload cu 
+			ON ord.CustomerName=cu.CustomerName 
+	JOIN dbo.Locations_Preload ci
+			ON ord.CityName=ci.CityName
+			AND ord.StateProvinceName=ci.StateProvName 
+			AND ord.CountryName=ci.CountryName 
+	JOIN dbo.Products_Preload pr 
+			ON ord.StockItemName=pr.ProductName 
+	JOIN dbo.Salesperson_Preload sp 
+			ON ord.LogonName =sp.LogonName
+	JOIN dbo.Supplier_Preload su
+			ON ord.SupplierName = su.SupplierName
+	GROUP BY cu.CustomerKey,ci.LocationKey,pr.ProductKey,sp.SalespersonKey,su.SupplierKey,ord.OrderDate;
 END;
 GO
 
