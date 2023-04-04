@@ -212,6 +212,16 @@ CREATE TABLE dbo.Products_Stage(
 	ProductBrand NVARCHAR(50) NULL,
 	ProductSize NVARCHAR(20) NULL,
 );
+
+CREATE TABLE dbo.Salesperson_Stage (
+        FullName NVARCHAR(50),
+	PreferredName NVARCHAR(50),
+	LogonName NVARCHAR(50),
+	PhoneNumber NVARCHAR(20),
+	FaxNumber NVARCHAR(20),
+	EmailAddress NVARCHAR(256)
+);
+
 -- extract
 GO
 
@@ -311,9 +321,45 @@ END;
 
 GO
 
+CREATE PROCEDURE dbo.Salesperson_Extract
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+
+    TRUNCATE TABLE dbo.Salesperson_Stage;
+
+	INSERT INTO dbo.Salesperson_Stage(
+	       FullName,
+	       PreferredName,
+		   LogonName,
+		   PhoneNumber,
+		   FaxNumber,
+		   EmailAddress
+	)
+    SELECT FullName,
+	       PreferredName,
+		   LogonName,
+		   PhoneNumber,
+		   FaxNumber,
+		   EmailAddress
+	FROM WideWorldImporters.Application.People
+	WHERE IsSalesperson='1';
+
+    SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END; --END OF PROCEDURE Salesperson_Extract
+GO
+
 
 --EXEC Products_Extract;
 --SELECT * FROM Products_Stage;
+--EXEC dbo.Salesperson_Extract;
+--SELECT * FROM Salesperson_Stage;
 -- Requirement5
 GO
 /* CREATING SEQUENCE TO MAINTAIN THE SURROGATE KEY */
@@ -552,6 +598,74 @@ BEGIN;
 END; --END OF PROCEDURE Customers_Transform
 GO
 
+--Salesperson preload table and procedure
+/* CREATING TARGET STAGING TABLES */
+CREATE TABLE dbo.Salesperson_Preload (
+	SalespersonKey INT NOT NULL,
+        FullName NVARCHAR(50),
+	PreferredName NVARCHAR(50),
+	LogonName NVARCHAR(50),
+	PhoneNumber NVARCHAR(20),
+	FaxNumber NVARCHAR(20),
+	EmailAddress NVARCHAR(256)
+    CONSTRAINT PK_Salesperson_Preload PRIMARY KEY CLUSTERED ( SalespersonKey )
+);
+
+CREATE PROCEDURE dbo.Salesperson_Transform    -- Type 1 SCD
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    TRUNCATE TABLE dbo.Salesperson_Preload;
+
+    BEGIN TRANSACTION;
+	
+	/*CREATE NEW RECORD*/
+    INSERT INTO dbo.Salesperson_Preload
+    SELECT NEXT VALUE FOR dbo.SalespersonKey AS SalespersonKey,
+           sps.FullName,
+		   sps.PreferredName,
+		   sps.LogonName,
+		   sps.PhoneNumber,
+		   sps.FaxNumber,
+		   sps.EmailAddress
+    FROM dbo.Salesperson_Stage sps
+    WHERE NOT EXISTS ( SELECT 1 
+                       FROM dbo.DimSalesPeople dsp
+                       WHERE sps.FullName = dsp.FullName
+					   AND sps.PreferredName = dsp.PreferredName
+					   AND sps.LogonName = dsp.LogonName
+					   AND sps.PhoneNumber = dsp.PhoneNumber
+					   AND sps.FaxNumber = dsp.FaxNumber
+					   AND sps.EmailAddress = dsp.EmailAddress);
+	
+	/*UPDATE EXITING RECORDS*/
+    INSERT INTO dbo.Salesperson_Preload
+    SELECT dsp.SalespersonKey,
+		   sps.FullName,
+		   sps.PreferredName,
+		   sps.LogonName,
+		   sps.PhoneNumber,
+		   sps.FaxNumber,
+		   sps.EmailAddress
+    FROM dbo.Salesperson_Stage sps
+    JOIN dbo.DimSalesPeople dsp
+        ON sps.FullName = dsp.FullName
+		   AND sps.PreferredName = dsp.PreferredName
+		   AND sps.LogonName = dsp.LogonName
+		   AND sps.PhoneNumber = dsp.PhoneNumber
+		   AND sps.FaxNumber = dsp.FaxNumber
+		   AND sps.EmailAddress = dsp.EmailAddress;
+
+    COMMIT TRANSACTION;
+END; --END OF PROCEDURE Salesperson_Transform
+GO
+
+--EXEC dbo.Salesperson_Transform;
+--SELECT * FROM Salesperson_Preload;
+--GO
+
 
 -- Requirement6
 
@@ -632,4 +746,31 @@ BEGIN
 
 	COMMIT TRANSACTION;
 END;
+
+CREATE PROCEDURE dbo.Salesperson_Load
+AS
+BEGIN;
+
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
+    DELETE dsp
+    FROM dbo.DimSalesPeople dsp
+    JOIN dbo.Salesperson_Preload sppl
+        ON dsp.SalespersonKey = sppl.SalespersonKey;
+
+    INSERT INTO dbo.DimSalesPeople
+    SELECT * 
+    FROM dbo.Salesperson_Preload;
+
+    COMMIT TRANSACTION;
+END;
+GO
+
+--EXEC dbo.Salesperson_Load;
+--SELECT * FROM DimSalesPeople;
+--GO
+
 -- Requirement7
