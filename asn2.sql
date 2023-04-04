@@ -336,7 +336,7 @@ GO
 -- Requirement5
 GO
 /* CREATING SEQUENCE TO MAINTAIN THE SURROGATE KEY */
-CREATE SEQUENCE dbo.CityKey START WITH 1;
+CREATE SEQUENCE dbo.LocationKey START WITH 1;
 CREATE SEQUENCE dbo.SalespersonKey START WITH 1;
 CREATE SEQUENCE dbo.SupplierKey START WITH 1;
 CREATE SEQUENCE dbo.CustomerKey START WITH 1;
@@ -640,10 +640,56 @@ GO
 --SELECT * FROM Salesperson_Preload;
 --GO
 
+--location preload table and procedure
+CREATE TABLE dbo.Locations_Preload( 
+	LocationKey INT NOT NULL, 
+	CityName NVARCHAR(50) NULL, 
+	StateProvCode NVARCHAR(5) NULL, 
+	StateProvName NVARCHAR(50) NULL, 
+	CountryName NVARCHAR(60) NULL, 
+	CountryFormalName NVARCHAR(60) NULL, 
+	CONSTRAINT PK_Cities_Preload PRIMARY KEY CLUSTERED (LocationKey) );
+
+GO
+
+CREATE OR ALTER PROCEDURE dbo.Locations_Transform
+AS
+BEGIN;
+	SET NOCOUNT ON;
+	SET XACT_ABORT ON;
+	TRUNCATE TABLE dbo.Locations_Preload;
+BEGIN TRANSACTION;
+--Use Sequence to create new surrogate keys (Create new records)
+INSERT INTO dbo.Locations_Preload /* Column list excluded for brevity */
+SELECT NEXT VALUE FOR dbo.LocationKey AS LocationKey,
+	cu.DeliveryCityName,
+	cu.DeliveryStateProvinceCode,
+	cu.DeliveryStateProvinceName,
+	cu.DeliveryCountryName,
+	cu.DeliveryFormalName
+	FROM dbo.Customers_Stage cu
+	WHERE NOT EXISTS (SELECT 1
+FROM dbo.DimLocations ci WHERE cu.DeliveryCityName = ci.CityName
+AND cu.DeliveryStateProvinceName = ci.StateProvName AND cu.DeliveryCountryName = ci.CountryName );
+--Use existing surrogate key if one exists (Add updated records)
+INSERT INTO dbo.Locations_Preload/* Column list excluded for brevity */ 
+SELECT ci.LocationKey, 
+	cu.DeliveryCityName, 
+	cu.DeliveryStateProvinceCode, 
+	cu.DeliveryStateProvinceName, 
+	cu.DeliveryCountryName, 
+	cu.DeliveryFormalName 
+	FROM dbo.Customers_Stage cu 
+	JOIN dbo.DimLocations ci ON cu.DeliveryCityName=ci.CityName 
+	AND cu.DeliveryStateProvinceName=ci.StateProvName 
+	AND cu.DeliveryCountryName=ci.CountryName; 
+	COMMIT TRANSACTION; 
+END;
+GO
 
 -- Requirement6
 
-CREATE PROCEDURE dbo.Cities_Load
+CREATE PROCEDURE dbo.Location_Load
 AS
 BEGIN;
 
@@ -652,18 +698,21 @@ BEGIN;
 
     BEGIN TRANSACTION;
 
-    DELETE ci
-    FROM dbo.DimCities ci
-    JOIN dbo.Cities_Preload pl
-        ON ci.CityKey = pl.CityKey;
+    DELETE dl
+    FROM dbo.DimLocations dl
+    JOIN dbo.Locations_Preload pl
+        ON dl.LocationKey = pl.LocationKey;
 
-    INSERT INTO dbo.DimCities 
+    INSERT INTO dbo.DimLocations 
     SELECT * 
-    FROM dbo.Cities_Preload;
+    FROM dbo.Locations_Preload;
 
     COMMIT TRANSACTION;
 END;
 GO
+
+--EXEC dbo.Location_Load;
+--SELECT * FROM DimLocations;
 
 CREATE PROCEDURE dbo.Orders_Load
 AS
