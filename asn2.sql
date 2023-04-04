@@ -1123,9 +1123,6 @@ EXEC Customers_Transform '2013-01-01';
 EXEC Customer_Load;
 EXEC Locations_Transform;
 EXEC Location_Load;
-EXEC Orders_Extract '2013-01-01';
-EXEC Orders_Transform;
-EXEC Orders_Load;
 EXEC Salesperson_Extract;
 EXEC Salesperson_Transform;
 EXEC Salesperson_Load;
@@ -1135,4 +1132,7 @@ EXEC Products_Load;
 EXEC Supplier_Extract;
 EXEC Supplier_Transform '2013-01-01';
 EXEC Supplier_Load;
+EXEC Orders_Extract '2013-01-01';
+EXEC Orders_Transform;
+EXEC Orders_Load;
 */
