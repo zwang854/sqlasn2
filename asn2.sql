@@ -91,33 +91,6 @@ GO
 
 
 
-CREATE OR ALTER PROCEDURE dbo.DimDate_Load (@DateValue DATE)
-AS
-BEGIN
-    INSERT INTO dbo.DimDate
-    SELECT CAST( YEAR(@DateValue) * 10000 + MONTH(@DateValue) * 100 + DAY(@DateValue) AS INT),
-           @DateValue,
-           YEAR(@DateValue),
-		   DATEPART(qq,@DateValue),
-           MONTH(@DateValue),
-           DAY(@DateValue),
-           DATEADD(DAY,1,EOMONTH(@DateValue,-1)),
-           EOMONTH(@DateValue),
-           DATENAME(mm,@DateValue),
-           DATENAME(dw,@DateValue);
-END;
-
-
-CREATE INDEX IX_FactOrders_CustomerKey ON dbo.FactOrders(CustomerKey);
-CREATE INDEX IX_FactOrders_CityKey ON dbo.FactOrders(LocationKey);
-CREATE INDEX IX_FactOrders_ProductKey ON dbo.FactOrders(ProductKey);
-CREATE INDEX IX_FactOrders_SalespersonKey ON dbo.FactOrders(SalespersonKey);
-CREATE INDEX IX_FactOrders_DateKey ON dbo.FactOrders(DateKey);
-
-
-
-GO
-
 SELECT * FROM FactOrders
 
 -- Requirement1
