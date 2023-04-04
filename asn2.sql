@@ -1013,8 +1013,8 @@ BEGIN;
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    INSERT INTO dbo.FactOrders 
-    SELECT * 
+    INSERT INTO dbo.FactOrders ([CustomerKey],[LocationKey],[ProductKey],[SalespersonKey],[DateKey],[Quantity],[UnitPrice],[TaxRate],[TotalBeforeTax],[TotalAfterTax],[SupplierKey])
+    SELECT [CustomerKey],[LocationKey],[ProductKey],[SalespersonKey],[DateKey],[Quantity],[UnitPrice],[TaxRate],[TotalBeforeTax],[TotalAfterTax],[SupplierKey] 
     FROM dbo.Orders_Preload;
 
 END;
