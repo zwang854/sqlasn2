@@ -581,7 +581,7 @@ BEGIN;
 	--by this point, the preload has new customers that were not in dim table
 
 	/*EXPRIRE MISSING RECORDS*/
-	INSERT INTO dbo.Customers_Preload 
+	INSERT INTO dbo.Products_Preload 
     SELECT p.ProductKey,
            p.ProductName,
            p.ProductColour,
