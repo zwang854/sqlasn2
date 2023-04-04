@@ -1,5 +1,13 @@
 USE master;
-DROP DATABASE IF EXISTS WWI_DM;
+
+/*
+use master 
+go
+alter database WWI_DM set single_user with rollback immediate
+
+drop database WWI_DM
+
+*/
 GO
 CREATE DATABASE WWI_DM;
 
@@ -94,13 +102,14 @@ GO
 --SELECT * FROM FactOrders
 
 -- Requirement1
-
+--ALTER TABLE DimSuppliers ADD SupplierCategoryName NVARCHAR(50) NULL;
 CREATE TABLE dbo.DimSuppliers(
 	SupplierKey INT NOT NULL,
 	SupplierName NVARCHAR(100) NULL,
 	PhoneNumber NVARCHAR(20) NULL,
     FaxNumber NVARCHAR(20) NULL,
     WebsiteUrl NVARCHAR(100) NULL,
+	SupplierCategoryName NVARCHAR(50) NULL,
     StartDate DATE NOT NULL,
 	EndDate DATE NULL,
     CONSTRAINT PK_DimSuppliers PRIMARY KEY CLUSTERED ( SupplierKey )
@@ -150,6 +159,15 @@ GO
 
 
 -- stage tables
+CREATE TABLE dbo.Supplier_Stage (
+	SupplierName NVARCHAR(100) NULL,
+	PhoneNumber NVARCHAR(20) NULL,
+    FaxNumber NVARCHAR(20) NULL,
+    WebsiteUrl NVARCHAR(100) NULL,
+	SupplierCategoryName NVARCHAR(50)
+);
+
+
 CREATE TABLE dbo.Customers_Stage (
     CustomerName NVARCHAR(100),
     CustomerCategoryName NVARCHAR(50),
@@ -187,7 +205,7 @@ CREATE TABLE dbo.Products_Stage(
 );
 
 CREATE TABLE dbo.Salesperson_Stage (
-        FullName NVARCHAR(50),
+    FullName NVARCHAR(50),
 	PreferredName NVARCHAR(50),
 	LogonName NVARCHAR(50),
 	PhoneNumber NVARCHAR(20),
@@ -197,7 +215,39 @@ CREATE TABLE dbo.Salesperson_Stage (
 
 -- extract
 GO
+CREATE PROCEDURE dbo.Supplier_Extract
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @RowCt INT;
+	
+	TRUNCATE TABLE dbo.Supplier_Stage
 
+	INSERT INTO dbo.Supplier_Stage (
+		SupplierName,
+		PhoneNumber,
+		FaxNumber,
+		WebsiteUrl,
+		SupplierCategoryName
+	)
+	SELECT s.SupplierName,
+		   s.PhoneNumber,
+		   s.FaxNumber,
+		   s.WebsiteURL,
+		   sc.SupplierCategoryName
+	FROM WideWorldImporters.Purchasing.Suppliers s
+		LEFT JOIN WideWorldImporters.Purchasing.SupplierCategories sc
+		ON s.SupplierCategoryID = sc.SupplierCategoryID
+
+	SET @RowCt = @@ROWCOUNT;
+    IF @RowCt = 0 
+    BEGIN;
+        THROW 50001, 'No records found. Check with source system.', 1;
+    END;
+END;
+
+GO
 CREATE PROCEDURE dbo.Customers_Extract
 AS
 BEGIN;
@@ -472,6 +522,104 @@ END; --END OF PROCEDURE Customers_Transform
 GO
 
 
+-- supplier preload table and procedure
+CREATE TABLE dbo.Supplier_Preload (
+	SupplierKey INT NOT NULL,
+	SupplierName NVARCHAR(100) NULL,
+	PhoneNumber NVARCHAR(20) NULL,
+    FaxNumber NVARCHAR(20) NULL,
+    WebsiteUrl NVARCHAR(100) NULL,
+	SupplierCategoryName NVARCHAR(50) NULL,
+    StartDate DATE NOT NULL,
+	EndDate DATE NULL,
+    CONSTRAINT PK_Supplier_Preload PRIMARY KEY CLUSTERED ( SupplierKey )
+);
+GO
+
+CREATE PROCEDURE dbo.Supplier_Transform
+	@StartDate DATE
+AS
+BEGIN;
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+	TRUNCATE TABLE dbo.Supplier_Preload;
+    DECLARE @EndDate DATE = DATEADD(dd,-1,@StartDate);
+
+    BEGIN TRANSACTION;
+	/*ADD UPDATED RECORDS*/
+	INSERT INTO dbo.Supplier_Preload 
+    SELECT NEXT VALUE FOR dbo.SupplierKey AS SupplierKey,
+           stg.SupplierName,
+           stg.PhoneNumber,
+		   stg.FaxNumber,
+		   stg.WebsiteUrl,
+		   stg.SupplierCategoryName,
+           @StartDate,
+           NULL
+    FROM dbo.Supplier_Stage stg
+    JOIN dbo.DimSuppliers s
+        ON stg.SupplierName = s.SupplierName-- grab all records of stage table that has name match with the dimtable
+        AND s.EndDate IS NULL
+    WHERE stg.PhoneNumber <> s.PhoneNumber
+          OR stg.FaxNumber <> s.FaxNumber
+		  OR stg.WebsiteUrl <> s.WebsiteUrl
+          OR stg.SupplierCategoryName <> s.SupplierCategoryName;
+		  -- by this point, preload table has all the changed records, these are updated records,
+		  -- next is add the old records and expire them
+
+	/*ADD EXISTING RECORDS, AND EXPIRE AS NECESSARY*/
+	INSERT INTO dbo.Supplier_Preload 
+    SELECT s.SupplierKey,
+           s.SupplierName,
+           s.PhoneNumber,
+           s.FaxNumber,
+		   s.WebsiteUrl,
+           s.SupplierCategoryName,
+           s.StartDate,
+           CASE 
+               WHEN pl.SupplierName IS NULL THEN NULL
+               ELSE @EndDate
+           END AS EndDate
+    FROM dbo.DimSuppliers s
+    LEFT JOIN dbo.Supplier_Preload pl    
+        ON pl.SupplierName =s.SupplierName
+        AND s.EndDate IS NULL;
+
+-- By this point, preload table has all the unchanged records, and expired all the changed records
+	/*CREATE NEW RECORDS*/
+	INSERT INTO dbo.Supplier_Preload 
+    SELECT NEXT VALUE FOR dbo.SupplierKey AS SupplierKey,
+           stg.SupplierName,
+           stg.PhoneNumber,
+           stg.FaxNumber,
+		   stg.WebsiteUrl,
+           stg.SupplierCategoryName,
+           @StartDate,
+           NULL
+    FROM dbo.Supplier_Stage stg --stage table
+    WHERE NOT EXISTS ( SELECT 1 FROM dbo.DimSuppliers s WHERE stg.SupplierName = s.SupplierName );
+
+	--by this point, the preload has new customers that were not in dim table
+	/*EXPRIRE MISSING RECORDS*/
+	INSERT INTO dbo.Supplier_Preload 
+    SELECT s.SupplierKey,
+           s.SupplierName,
+           s.PhoneNumber,
+           s.FaxNumber,
+		   s.WebsiteUrl,
+		   s.SupplierCategoryName,
+           s.StartDate,
+           @EndDate
+    FROM dbo.DimSuppliers s--dim table
+    WHERE NOT EXISTS ( SELECT 1 FROM dbo.Supplier_Stage stg WHERE stg.SupplierName = s.SupplierName )
+          AND s.EndDate IS NULL;
+	--expire all records that not in the stage table, and still add these to preload to keep track
+
+    COMMIT TRANSACTION;
+END; --END OF PROCEDURE Supplier_Transform
+
+GO
 --Products preload table and procedure
 CREATE TABLE dbo.Products_Preload (
 	ProductKey INT NOT NULL,
@@ -567,7 +715,7 @@ BEGIN;
 	--expire all records that noit in the stage table, and still add these to preload to keep track
 
     COMMIT TRANSACTION;
-END; --END OF PROCEDURE Customers_Transform
+END; --END OF PROCEDURE Product_Transform
 GO
 
 --Salesperson preload table and procedure
@@ -793,6 +941,27 @@ BEGIN;
 END;
 GO
 
+CREATE PROCEDURE dbo.Supplier_Load
+AS
+BEGIN;
+
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
+    DELETE s
+    FROM dbo.DimSuppliers s
+    JOIN dbo.Supplier_Preload sp
+        ON s.SupplierKey = sp.SupplierKey;
+
+    INSERT INTO dbo.DimSuppliers
+    SELECT * 
+    FROM dbo.Supplier_Preload;
+
+    COMMIT TRANSACTION;
+END;
+GO
 --EXEC dbo.Salesperson_Load;
 --SELECT * FROM DimSalesPeople;
 --GO
