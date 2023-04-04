@@ -91,7 +91,7 @@ GO
 
 
 
-SELECT * FROM FactOrders
+--SELECT * FROM FactOrders
 
 -- Requirement1
 
@@ -137,9 +137,9 @@ BEGIN;
  END
 END
 
-EXEC DimDate_Load
+--EXEC DimDate_Load
 
-SELECT * FROM dbo.DimDate;
+--SELECT * FROM dbo.DimDate;
 GO
 
 -- Requirement3
