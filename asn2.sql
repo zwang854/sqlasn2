@@ -378,11 +378,14 @@ BEGIN;
 END; --END OF PROCEDURE Salesperson_Extract
 GO
 
-
---EXEC Products_Extract;
---SELECT * FROM Products_Stage;
---EXEC dbo.Salesperson_Extract;
---SELECT * FROM Salesperson_Stage;
+/*
+EXEC Products_Extract;
+SELECT * FROM Products_Stage;
+EXEC dbo.Salesperson_Extract;
+SELECT * FROM Salesperson_Stage;
+EXEC Supplier_Extract;
+SELECT * FROM Supplier_Stage;
+*/
 -- Requirement5
 /* CREATING SEQUENCE TO MAINTAIN THE SURROGATE KEY */
 CREATE SEQUENCE dbo.LocationKey START WITH 1;
@@ -782,10 +785,13 @@ BEGIN;
     COMMIT TRANSACTION;
 END; --END OF PROCEDURE Salesperson_Transform
 GO
-
+/*
+EXEC dbo.Supplier_Transform '2013-1-1';
+SELECT * FROM Supplier_Preload;
+--GO
 --EXEC dbo.Salesperson_Transform;
 --SELECT * FROM Salesperson_Preload;
---GO
+*/
 
 --location preload table and procedure
 CREATE TABLE dbo.Locations_Preload( 
@@ -962,8 +968,10 @@ BEGIN;
     COMMIT TRANSACTION;
 END;
 GO
---EXEC dbo.Salesperson_Load;
---SELECT * FROM DimSalesPeople;
---GO
 
+/*
+EXEC dbo.Supplier_Load;
+SELECT * FROM DimSuppliers
+GO
+*/
 -- Requirement7
