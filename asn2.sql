@@ -21,7 +21,7 @@ CREATE TABLE dbo.DimLocations(--type1 SCD
 	StateProvName NVARCHAR(50) NULL,
 	CountryName NVARCHAR(60) NULL,
 	CountryFormalName NVARCHAR(60) NULL,
-    CONSTRAINT PK_DimCities PRIMARY KEY CLUSTERED ( LocationKey )
+    CONSTRAINT PK_DimLocations PRIMARY KEY CLUSTERED ( LocationKey )
 );
 
 CREATE TABLE dbo.DimCustomers(--type 2 SCD
@@ -888,7 +888,7 @@ CREATE TABLE dbo.Locations_Preload(
 	StateProvName NVARCHAR(50) NULL, 
 	CountryName NVARCHAR(60) NULL, 
 	CountryFormalName NVARCHAR(60) NULL, 
-	CONSTRAINT PK_Cities_Preload PRIMARY KEY CLUSTERED (LocationKey) );
+	CONSTRAINT PK_Locations_Preload PRIMARY KEY CLUSTERED (LocationKey) );
 
 GO
 
