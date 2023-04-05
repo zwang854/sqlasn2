@@ -6,8 +6,8 @@ go
 alter database WWI_DM set single_user with rollback immediate
 
 drop database WWI_DM
-
 */
+
 GO
 CREATE DATABASE WWI_DM;
 
@@ -95,6 +95,19 @@ CREATE TABLE dbo.FactOrders(
     CONSTRAINT FK_FactOrders_DimProducts FOREIGN KEY(ProductKey) REFERENCES dbo.DimProducts (ProductKey),
     CONSTRAINT FK_FactOrders_DimSalesPeople FOREIGN KEY(SalespersonKey) REFERENCES dbo.DimSalesPeople (SalespersonKey)
 );
+
+CREATE TABLE dbo.FactOrdersBackup(
+	CustomerKey INT NOT NULL,
+	LocationKey INT NOT NULL,
+	ProductKey INT NOT NULL,
+    SupplierKey INT NOT NULL,--supplier
+	SalespersonKey INT NOT NULL,
+	DateKey INT NOT NULL,
+	Quantity INT NOT NULL,
+	UnitPrice DECIMAL(18, 2) NOT NULL,
+	TaxRate DECIMAL(18, 3) NOT NULL,
+	TotalBeforeTax DECIMAL(18, 2) NOT NULL,
+	TotalAfterTax DECIMAL(18, 2) NOT NULL);
 GO
 
 
@@ -146,14 +159,34 @@ BEGIN;
  END
 END
 
---EXEC DimDate_Load
+
+EXEC DimDate_Load;--load 10 years of date to the dimDate
 
 --SELECT * FROM dbo.DimDate;
 GO
 
 -- Requirement3
 
-
+SELECT cu.CustomerName AS CustomerName, 
+ lo.CityName AS CityName,
+ sp.FullName AS SalespersonName,
+ pr.ProductName AS ProductName,
+ sup.SupplierName AS SupplierName,
+ da.DateValue AS Date
+FROM dbo.FactOrders
+JOIN dbo.DimCustomers cu ON dbo.FactOrders.CustomerKey = cu.CustomerKey
+JOIN dbo.DimLocations lo ON dbo.FactOrders.LocationKey = lo.LocationKey
+JOIN dbo.DimSalesPeople sp ON dbo.FactOrders.SalespersonKey = sp.SalespersonKey
+JOIN dbo.DimProducts pr ON dbo.FactOrders.ProductKey = pr.ProductKey
+JOIN dbo.DimSuppliers sup ON dbo.FactOrders.SupplierKey = sup.SupplierKey
+JOIN dbo.DimDate da ON dbo.FactOrders.DateKey = da.DateKey;
+/* Our business scenario is based on how good the salsperson is by ranking them by the totalbeforetax, this scenario also could be extened to how good the salesperson is for selling 
+   a certain brand/colour of products, selling for a certain location, etc*/
+SELECT sp.FullName, SUM(TotalBeforeTax) AS TotalSales
+FROM dbo.FactOrders
+JOIN dbo.DimSalesPeople sp ON dbo.FactOrders.SalespersonKey = sp.SalespersonKey
+GROUP BY sp.FullName
+ORDER BY SUM(TotalBeforeTax) DESC
 
 -- Requirement4
 
@@ -501,7 +534,7 @@ CREATE TABLE dbo.Customers_Preload (
 );
 
 GO
-CREATE PROCEDURE dbo.Customers_Transform    -- Type 2 SCD
+CREATE OR ALTER PROCEDURE dbo.Customers_Transform    -- Type 2 SCD
 	@StartDate DATE
 AS
 BEGIN;
@@ -513,7 +546,6 @@ BEGIN;
     --DECLARE @StartDate DATE = GETDATE();
 	--DECLARE @EndDate DATE = DATEADD(dd,-1,GETDATE());
     DECLARE @EndDate DATE = DATEADD(dd,-1,@StartDate);
-
     BEGIN TRANSACTION;
 
 	/*ADD UPDATED RECORDS*/
@@ -531,7 +563,7 @@ BEGIN;
            NULL
     FROM dbo.Customers_Stage stg
     JOIN dbo.DimCustomers cu
-        ON stg.CustomerName = cu.CustomerName-- grab all records of stage table that has name match with the dimtable
+        ON stg.CustomerName = cu.CustomerName
         AND cu.EndDate IS NULL
     WHERE stg.CustomerCategoryName <> cu.CustomerCategoryName
           OR stg.DeliveryCityName <> cu.DeliveryCityName
@@ -540,9 +572,6 @@ BEGIN;
           OR stg.PostalCityName <> cu.PostalCityName
           OR stg.PostalStateProvinceCode <> cu.PostalStateProvCode
           OR stg.PostalCountryName <> cu.PostalCountryName;
-		  -- by this point, preload table has all the changed records, these are updated records,
-		  -- next is add the old records and expire them
-
 
 	/*ADD EXISTING RECORDS, AND EXPIRE AS NECESSARY*/
     INSERT INTO dbo.Customers_Preload 
@@ -556,10 +585,6 @@ BEGIN;
            cu.PostalStateProvCode,
            cu.PostalCountryName,
            cu.StartDate,
-		   -- if pl.CustomerName is NULL, there is no change to this record, so keep it as-is
-		   -- if pl.CustomerName is not NULL, then thecurrent record already exists in the customerPreload tableand is being updated,
-		   -- in this case, the EndDate value for the previous record in the table needs to be updated to reflect the fact that the current record is expired,
-		   -- To do this, the @EndDate value is assigned to EndDate.
            CASE 
                WHEN pl.CustomerName IS NULL THEN NULL
                ELSE @EndDate
@@ -567,11 +592,8 @@ BEGIN;
     FROM dbo.DimCustomers cu
     LEFT JOIN dbo.Customers_Preload pl    
         ON pl.CustomerName = cu.CustomerName
-        AND cu.EndDate IS NULL;--no already expired records
+        AND cu.EndDate IS NULL;
     
-	-- By this point, preload table has all the unchanged records, and expired all the changed records
-
-
 	/*CREATE NEW RECORDS*/
     INSERT INTO dbo.Customers_Preload 
     SELECT NEXT VALUE FOR dbo.CustomerKey AS CustomerKey,
@@ -585,10 +607,8 @@ BEGIN;
            stg.PostalCountryName,
            @StartDate,
            NULL
-    FROM dbo.Customers_Stage stg --stage table
+    FROM dbo.Customers_Stage stg
     WHERE NOT EXISTS ( SELECT 1 FROM dbo.DimCustomers cu WHERE stg.CustomerName = cu.CustomerName );
-
-	--by this point, the preload has new customers that were not in dim table
 
 	/*EXPRIRE MISSING RECORDS*/
     INSERT INTO dbo.Customers_Preload 
@@ -603,14 +623,13 @@ BEGIN;
            cu.PostalCountryName,
            cu.StartDate,
            @EndDate
-    FROM dbo.DimCustomers cu--dim table
+    FROM dbo.DimCustomers cu
     WHERE NOT EXISTS ( SELECT 1 FROM dbo.Customers_Stage stg WHERE stg.CustomerName = cu.CustomerName )
           AND cu.EndDate IS NULL;
-	--expire all records that noit in the stage table, and still add these to preload to keep track
+	
     COMMIT TRANSACTION;
 END; --END OF PROCEDURE Customers_Transform
 GO
-
 
 -- supplier preload table and procedure
 CREATE TABLE dbo.Supplier_Preload (
@@ -1117,8 +1136,11 @@ GO
 
 
 /* execute procedures*/
-/*
-EXEC DimDate_Load;
+
+EXEC DimDate_Load;--load 10 years of date to the dimDate
+INSERT INTO dbo.FactOrdersBackup SELECT * FROM dbo.FactOrders;
+DELETE FROM dbo.FactOrders;
+
 EXEC Customers_Extract;
 EXEC Customers_Transform '2013-01-01';
 EXEC Customer_Load;
@@ -1133,7 +1155,59 @@ EXEC Products_Load;
 EXEC Supplier_Extract;
 EXEC Supplier_Transform '2013-01-01';
 EXEC Supplier_Load;
+INSERT INTO dbo.FactOrders SELECT * FROM dbo.FactOrdersBackup;
+DELETE FROM dbo.FactOrdersBackup;
 EXEC Orders_Extract '2013-01-01';
 EXEC Orders_Transform;
 EXEC Orders_Load;
+GO
+
+
+/*
+CREATE PROCEDURE Load_all
+AS
+BEGIN;
+	SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRANSACTION;
+
+	DECLARE @Date DATE;
+	DECLARE @StartDate DATE = '2013-01-01';
+	DECLARE @EndDate DATE = '2013-01-04';
+
+	WHILE @StartDate <= @EndDate
+	BEGIN
+		SET @Date = @StartDate;
+
+			INSERT INTO dbo.FactOrdersBackup SELECT * FROM dbo.FactOrders;
+			DELETE FROM dbo.FactOrders;
+			--EXEC DimDate_Load;
+			EXEC Customers_Extract;
+			EXEC Customers_Transform @date;
+			EXEC Customer_Load;
+			EXEC Locations_Transform;
+			EXEC Location_Load;
+			EXEC Salesperson_Extract;
+			EXEC Salesperson_Transform;
+			EXEC Salesperson_Load;
+			EXEC Products_Extract;
+			EXEC Products_Transform @date;
+			EXEC Products_Load;
+			EXEC Supplier_Extract;
+			EXEC Supplier_Transform @date;
+			EXEC Supplier_Load;
+			INSERT INTO dbo.FactOrders SELECT * FROM dbo.FactOrdersBackup;
+			DELETE FROM dbo.FactOrdersBackup;
+			EXEC Orders_Extract @date;
+			EXEC Orders_Transform;
+			EXEC Orders_Load;
+
+		SET @StartDate = DATEADD(day, 1, @StartDate);
+
+    COMMIT TRANSACTION;
+END;
+
+
+EXEC Load_all;
 */
