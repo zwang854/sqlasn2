@@ -926,7 +926,9 @@ BEGIN;
 		cu.DeliveryStateProvinceName,
 		cu.DeliveryCountryName,
 		cu.DeliveryFormalName
-		FROM dbo.Customers_Stage cu
+		FROM (SELECT DISTINCT DeliveryCityName,DeliveryStateProvinceCode,DeliveryStateProvinceName,DeliveryCountryName,DeliveryFormalName
+				FROM Customers_Stage
+		) cu
 		WHERE NOT EXISTS (SELECT 1
 	FROM dbo.DimLocations ci WHERE cu.DeliveryCityName = ci.CityName
 	AND cu.DeliveryStateProvinceName = ci.StateProvName AND cu.DeliveryCountryName = ci.CountryName );
