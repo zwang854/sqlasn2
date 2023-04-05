@@ -898,31 +898,31 @@ BEGIN;
 	SET NOCOUNT ON;
 	SET XACT_ABORT ON;
 	TRUNCATE TABLE dbo.Locations_Preload;
-BEGIN TRANSACTION;
+	BEGIN TRANSACTION;
 --Use Sequence to create new surrogate keys (Create new records)
-INSERT INTO dbo.Locations_Preload /* Column list excluded for brevity */
-SELECT NEXT VALUE FOR dbo.LocationKey AS LocationKey,
-	cu.DeliveryCityName,
-	cu.DeliveryStateProvinceCode,
-	cu.DeliveryStateProvinceName,
-	cu.DeliveryCountryName,
-	cu.DeliveryFormalName
-	FROM dbo.Customers_Stage cu
-	WHERE NOT EXISTS (SELECT 1
-FROM dbo.DimLocations ci WHERE cu.DeliveryCityName = ci.CityName
-AND cu.DeliveryStateProvinceName = ci.StateProvName AND cu.DeliveryCountryName = ci.CountryName );
+	INSERT INTO dbo.Locations_Preload /* Column list excluded for brevity */
+	SELECT NEXT VALUE FOR dbo.LocationKey AS LocationKey,
+		cu.DeliveryCityName,
+		cu.DeliveryStateProvinceCode,
+		cu.DeliveryStateProvinceName,
+		cu.DeliveryCountryName,
+		cu.DeliveryFormalName
+		FROM dbo.Customers_Stage cu
+		WHERE NOT EXISTS (SELECT 1
+	FROM dbo.DimLocations ci WHERE cu.DeliveryCityName = ci.CityName
+	AND cu.DeliveryStateProvinceName = ci.StateProvName AND cu.DeliveryCountryName = ci.CountryName );
 --Use existing surrogate key if one exists (Add updated records)
-INSERT INTO dbo.Locations_Preload/* Column list excluded for brevity */ 
-SELECT ci.LocationKey, 
-	cu.DeliveryCityName, 
-	cu.DeliveryStateProvinceCode, 
-	cu.DeliveryStateProvinceName, 
-	cu.DeliveryCountryName, 
-	cu.DeliveryFormalName 
-	FROM dbo.Customers_Stage cu 
-	JOIN dbo.DimLocations ci ON cu.DeliveryCityName=ci.CityName 
-	AND cu.DeliveryStateProvinceName=ci.StateProvName 
-	AND cu.DeliveryCountryName=ci.CountryName; 
+	INSERT INTO dbo.Locations_Preload/* Column list excluded for brevity */ 
+	SELECT DISTINCT ci.LocationKey, 
+		cu.DeliveryCityName, 
+		cu.DeliveryStateProvinceCode, 
+		cu.DeliveryStateProvinceName, 
+		cu.DeliveryCountryName, 
+		cu.DeliveryFormalName 
+		FROM dbo.Customers_Stage cu 
+		JOIN dbo.DimLocations ci ON cu.DeliveryCityName=ci.CityName 
+		AND cu.DeliveryStateProvinceName=ci.StateProvName 
+		AND cu.DeliveryCountryName=ci.CountryName; 
 	COMMIT TRANSACTION; 
 END;
 GO
